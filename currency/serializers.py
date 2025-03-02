@@ -31,3 +31,13 @@ class BulkCurrencyRateSerializer(serializers.Serializer):
     def create(self, validated_data):
         rates_data = validated_data.get('rates')
         return [create_currency_rate(rate_data) for rate_data in rates_data]
+
+class CurrencyPairCheckSerializer(serializers.ModelSerializer):
+    exists = serializers.BooleanField()
+    id = serializers.IntegerField(required=False)
+    pair = serializers.CharField(required=False)
+    rate = serializers.FloatField(required=False)
+
+    class Meta:
+        model = CurrencyRate
+        fields = ['exists', 'id', 'pair', 'rate']

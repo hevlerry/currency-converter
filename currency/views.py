@@ -8,9 +8,11 @@ from .services import (
     create_currency_rate,
     sync_currency_rate as sync_currency_rate_service,
     create_bulk_currency_rates,
-    delete_currency_rates_by_ids
+    delete_currency_rates_by_ids,
+    currency_pair_exists,
+    get_currency_rate_by_pair
 )
-from .serializers import UserSerializer, LoginSerializer, CurrencyRateSerializer, BulkCurrencyRateSerializer
+from .serializers import UserSerializer, LoginSerializer, CurrencyRateSerializer, BulkCurrencyRateSerializer, CurrencyPairCheckSerializer
 from django.shortcuts import get_object_or_404
 import requests
 from .models import CurrencyRate
@@ -55,6 +57,9 @@ class CurrencyRateViewSet(viewsets.ModelViewSet):
     def create(self, request):
         serializer = self.get_serializer(data=request.data)
         if serializer.is_valid():
+            # Check if the currency pair already exists
+            if currency_pair_exists(serializer.validated_data['pair']):
+                return Response({'error': 'Currency pair already exists.'}, status=status.HTTP_400_BAD_REQUEST)
             currency_rate = create_currency_rate(serializer.validated_data)
             return Response(CurrencyRateSerializer(currency_rate).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -84,6 +89,31 @@ class CurrencyRateViewSet(viewsets.ModelViewSet):
         elif request.method == 'DELETE':
             currency_rate.delete()
             return Response({'message': 'Currency rate deleted successfully'}, status=status.HTTP_204_NO_CONTENT)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def check_currency_pair(request):
+    pair = request.data.get('pair')
+    if not pair:
+        return Response({'error': 'Currency pair not provided.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    currency_rate = get_currency_rate_by_pair(pair)
+    response_data = {
+        'exists': False
+    }
+
+    if currency_rate:
+        response_data['exists'] = True
+        response_data['id'] = currency_rate.id
+        response_data['pair'] = currency_rate.pair
+        response_data['rate'] = currency_rate.rate
+
+    # Use the serializer to validate and serialize the response
+    serializer = CurrencyPairCheckSerializer(data=response_data)
+    serializer.is_valid(raise_exception=True)
+
+    return Response(serializer.data, status=status.HTTP_200_OK)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])

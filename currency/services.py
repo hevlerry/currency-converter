@@ -67,3 +67,12 @@ def sync_currency_rate(currency_rate):
         raise ValueError(f"HTTP error occurred: {http_err}")
     except requests.exceptions.RequestException as req_err:
         raise ValueError(f"Request error occurred: {req_err}")
+
+def currency_pair_exists(pair):
+    return CurrencyRate.objects.filter(pair=pair).exists()
+
+def get_currency_rate_by_pair(pair):
+    try:
+        return CurrencyRate.objects.get(pair=pair)
+    except CurrencyRate.DoesNotExist:
+        return None
