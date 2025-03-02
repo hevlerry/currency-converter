@@ -47,9 +47,7 @@ REST_FRAMEWORK = {
     ),
 }
 
-from decouple import config
-
-CURRENCY_FREAKS_API_KEY = config('CURRENCY_FREAKS_API_KEY')
+CURRENCY_FREAKS_API_KEY = 'cb1d7f7c66c445719ca2597904b347bf'
 
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),

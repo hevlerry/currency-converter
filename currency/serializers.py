@@ -24,3 +24,10 @@ class CurrencyRateSerializer(serializers.ModelSerializer):
     class Meta:
         model = CurrencyRate
         fields = '__all__'
+
+class BulkCurrencyRateSerializer(serializers.Serializer):
+    rates = CurrencyRateSerializer(many=True)
+
+    def create(self, validated_data):
+        rates_data = validated_data.get('rates')
+        return [create_currency_rate(rate_data) for rate_data in rates_data]
