@@ -10,16 +10,23 @@ from .services import (
     create_bulk_currency_rates,
     delete_currency_rates_by_ids,
     currency_pair_exists,
-    get_currency_rate_by_pair
+    get_currency_rate_by_pair,
+    get_supported_currency_pairs_with_ids
 )
-from .serializers import UserSerializer, LoginSerializer, CurrencyRateSerializer, BulkCurrencyRateSerializer, CurrencyPairCheckSerializer
+from .serializers import (
+    UserSerializer,
+    LoginSerializer,
+    CurrencyRateSerializer,
+    BulkCurrencyRateSerializer,
+    CurrencyPairCheckSerializer,
+    CurrencyPairSerializer
+)
 from django.shortcuts import get_object_or_404
 import requests
 from .models import CurrencyRate
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
-
 class RegisterView(generics.CreateAPIView):
     serializer_class = UserSerializer
 
@@ -162,3 +169,14 @@ class BulkCurrencyRateView(APIView):
             "deleted_count": deleted_count,
             "message": "Currency rates deleted successfully."
         }, status=status.HTTP_204_NO_CONTENT)
+
+
+@api_view(['GET'])
+def supported_currencies(request):
+    # Use the service function to get the supported currency pairs with IDs
+    currency_pairs = get_supported_currency_pairs_with_ids()
+
+    # Prepare the response data
+    response_data = [{'id': currency['id'], 'pair': currency['pair']} for currency in currency_pairs]
+
+    return Response(response_data, status=status.HTTP_200_OK)

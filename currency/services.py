@@ -76,3 +76,6 @@ def get_currency_rate_by_pair(pair):
         return CurrencyRate.objects.get(pair=pair)
     except CurrencyRate.DoesNotExist:
         return None
+
+def get_supported_currency_pairs_with_ids():
+    return CurrencyRate.objects.values('id', 'pair').distinct()

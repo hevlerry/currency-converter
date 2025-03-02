@@ -41,3 +41,6 @@ class CurrencyPairCheckSerializer(serializers.ModelSerializer):
     class Meta:
         model = CurrencyRate
         fields = ['exists', 'id', 'pair', 'rate']
+
+class CurrencyPairSerializer(serializers.Serializer):
+    pair = serializers.CharField()
