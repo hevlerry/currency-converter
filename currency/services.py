@@ -1,7 +1,7 @@
 from django.contrib.auth.models import User
 from django.contrib.auth import authenticate
 from rest_framework_simplejwt.tokens import RefreshToken
-from .models import CurrencyRate, CurrencyRateHistory
+from .models import CurrencyRate, CurrencyRateHistory, CurrencyAlert
 import requests
 from django.conf import settings
 from django.db.models import Min, Max
@@ -198,3 +198,52 @@ def get_currency_pair_details_service(currency_rate_id):
         'highest_rate': highest_rate,
         'lowest_rate': lowest_rate
     }
+
+from .models import CurrencyAlert, CurrencyRate
+from django.contrib.auth.models import User
+from django.utils import timezone
+
+def create_currency_alert_service(user: User, pair: str, target_rate: float):
+    # Check if the currency pair exists
+    if not CurrencyRate.objects.filter(pair=pair).exists():
+        raise ValueError("Currency pair does not exist.")
+
+    alert = CurrencyAlert.objects.create(user=user, pair=pair, target_rate=target_rate)
+    return alert
+
+def list_currency_alerts_service(user: User):
+    return CurrencyAlert.objects.filter(user=user)
+
+def get_currency_alert_service(alert_id: int, user: User):
+    try:
+        return CurrencyAlert.objects.get(id=alert_id, user=user)
+    except CurrencyAlert.DoesNotExist:
+        return None
+
+def update_currency_alert_service(alert_id: int, user: User, pair: str, target_rate: float):
+    alert = get_currency_alert_service(alert_id, user)
+    if alert:
+        alert.pair = pair
+        alert.target_rate = target_rate
+        alert.save()
+        return alert
+    return None
+
+def delete_currency_alert_service(alert_id: int, user: User):
+    try:
+        alert = CurrencyAlert.objects.get(id=alert_id, user=user)
+        alert.delete()
+        return True
+    except CurrencyAlert.DoesNotExist:
+        return False
+
+def check_and_trigger_alerts():
+    # Get all alerts
+    alerts = CurrencyAlert.objects.all()
+    for alert in alerts:
+        # Get the current rate for the alert's pair
+        current_rate = CurrencyRate.objects.filter(pair=alert.pair).first()
+        if current_rate and current_rate.rate > alert.target_rate and not alert.triggered:
+            alert.triggered = True
+            alert.triggered_at = timezone.now()  # Set the time when the alert was triggered
+            alert.save()

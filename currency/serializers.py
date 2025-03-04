@@ -1,4 +1,4 @@
-from .models import CurrencyRate, CurrencyRateHistory
+from .models import CurrencyRate, CurrencyRateHistory, CurrencyAlert
 from rest_framework import serializers
 from django.contrib.auth.models import User
 
@@ -81,3 +81,13 @@ class CurrencyPairDetailsSerializer(serializers.Serializer):
     daily_fluctuation = serializers.FloatField()
     highest_rate = serializers.FloatField()
     lowest_rate = serializers.FloatField()
+
+class CurrencyAlertSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CurrencyAlert
+        fields = ['id', 'pair', 'target_rate', 'triggered', 'triggered_at', 'created_at']
+
+class CurrencyAlertCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CurrencyAlert
+        fields = ['pair', 'target_rate']

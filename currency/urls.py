@@ -15,7 +15,8 @@ from .views import (
     get_latest_currency_rates,
     check_currency_rate_status,
     get_daily_summary,  # New endpoint
-    get_currency_pair_details  # New endpoint
+    get_currency_pair_details, manage_currency_alert,
+    trigger_currency_alerts, list_currency_alerts_and_create  # New endpoint
 )
 
 # Create a router and register the CurrencyRateViewSet
@@ -34,8 +35,12 @@ urlpatterns = [
     path('v1/currency/rates/<int:currency_pair_id>/min-max/', get_min_max_currency_rate, name='min_max_currency_rate'),
     path('v1/currency/rates/latest/', get_latest_currency_rates, name='latest_currency_rates'),
     path('v1/currency/rates/<int:currency_rate_id>/status/', check_currency_rate_status, name='currency_rate_status'),
-    path('v1/currency/rates/daily-summary/', get_daily_summary, name='daily_summary'),  # New endpoint
-    path('v1/currency/rates/<int:currency_rate_id>/details/', get_currency_pair_details, name='currency_pair_details'),  # New endpoint
+    path('v1/currency/rates/daily-summary/', get_daily_summary, name='daily_summary'),
+    path('v1/currency/rates/<int:currency_rate_id>/details/', get_currency_pair_details, name='currency_pair_details'),
+    path('v1/currency/alerts/', list_currency_alerts_and_create, name='list_currency_alerts_and_create'),
+    path('v1/currency/alerts/<int:alert_id>/', manage_currency_alert, name='manage_currency_alert'),  # GET, PUT, DELETE
+    path('v1/currency/alerts/trigger/', trigger_currency_alerts, name='trigger_currency_alerts'),
+    # POST to trigger alerts
 ]
 
 # Include the router URLs

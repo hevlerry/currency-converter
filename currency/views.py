@@ -14,7 +14,9 @@ from .services import (
     get_supported_currency_pairs_with_ids,
     get_currency_pair_trend,
     get_all_currency_rate_history, get_min_max_currency_rate_service, get_latest_currency_rates_service,
-    check_currency_rate_status_service, get_daily_summary_service, get_currency_pair_details_service
+    check_currency_rate_status_service, get_daily_summary_service, get_currency_pair_details_service,
+    create_currency_alert_service, list_currency_alerts_service, get_currency_alert_service,
+    update_currency_alert_service, delete_currency_alert_service, check_and_trigger_alerts
 )
 from .serializers import (
     UserSerializer,
@@ -24,14 +26,23 @@ from .serializers import (
     CurrencyPairCheckSerializer,
     CurrencyPairTrendSerializer,
     CurrencyRateHistorySerializer, MinMaxRateSerializer, LatestCurrencyRateSerializer, CurrencyRateStatusSerializer,
-    DailySummarySerializer, CurrencyPairDetailsSerializer,
+    DailySummarySerializer, CurrencyPairDetailsSerializer, CurrencyAlertCreateSerializer, CurrencyAlertSerializer,
 )
 from django.shortcuts import get_object_or_404
 import requests
 from .models import CurrencyRate, CurrencyRateHistory
-from rest_framework import status
-from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework import status
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from .serializers import CurrencyAlertSerializer, CurrencyAlertCreateSerializer
+from .services import (
+    create_currency_alert_service,
+    list_currency_alerts_service,
+    get_currency_alert_service,
+    update_currency_alert_service,
+)
 
 class RegisterView(generics.CreateAPIView):
     serializer_class = UserSerializer
@@ -273,3 +284,61 @@ def get_currency_pair_details(request, currency_rate_id):
         return Response(serializer.data, status=status.HTTP_200_OK)
     else:
         return Response({'error': 'Currency pair not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def list_currency_alerts_and_create(request):
+    if request.method == 'GET':
+        alerts = list_currency_alerts_service(request.user)
+        serializer = CurrencyAlertSerializer(alerts, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    elif request.method == 'POST':
+        serializer = CurrencyAlertCreateSerializer(data=request.data)
+        if serializer.is_valid():
+            try:
+                alert = create_currency_alert_service(request.user, serializer.validated_data['pair'], serializer.validated_data['target_rate'])
+                return Response(CurrencyAlertSerializer(alert).data, status=status.HTTP_201_CREATED)
+            except ValueError as e:
+                return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['GET', 'PUT', 'DELETE'])
+@permission_classes([IsAuthenticated])
+def manage_currency_alert(request, alert_id):
+    if request.method == 'GET':
+        alert = get_currency_alert_service(alert_id, request.user)
+        if alert:
+            serializer = CurrencyAlertSerializer(alert)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response({'error': 'Alert not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+    elif request.method == 'PUT':
+        alert = get_currency_alert_service(alert_id, request.user)
+        if alert:
+            serializer = CurrencyAlertCreateSerializer(alert, data=request.data)
+            if serializer.is_valid():
+                updated_alert = update_currency_alert_service(
+                    alert_id,
+                    request.user,
+                    serializer.validated_data['pair'],
+                    serializer.validated_data['target_rate']
+                )
+                return Response(CurrencyAlertSerializer(updated_alert).data, status=status.HTTP_200_OK)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'error': 'Alert not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+    elif request.method == 'DELETE':
+        if delete_currency_alert_service(alert_id, request.user):
+            return Response({'message': 'Alert successfully deleted.'}, status=status.HTTP_204_NO_CONTENT)
+        return Response({'error': 'Alert not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def trigger_currency_alerts(request):
+    try:
+        check_and_trigger_alerts()  # Call the function to check and trigger alerts
+        return Response({'message': 'Alerts checked and triggered if necessary.'}, status=status.HTTP_200_OK)
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
