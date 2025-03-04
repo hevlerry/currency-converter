@@ -1,4 +1,4 @@
-from .models import CurrencyRate
+from .models import CurrencyRate, CurrencyRateHistory
 from rest_framework import serializers
 from django.contrib.auth.models import User
 
@@ -42,5 +42,42 @@ class CurrencyPairCheckSerializer(serializers.ModelSerializer):
         model = CurrencyRate
         fields = ['exists', 'id', 'pair', 'rate']
 
-class CurrencyPairSerializer(serializers.Serializer):
+class CurrencyRateHistorySerializer(serializers.ModelSerializer):
+    currency_pair = serializers.CharField(source='currency_rate.pair')
+
+    class Meta:
+        model = CurrencyRateHistory
+        fields = ['currency_pair', 'rate', 'updated_at']
+
+class CurrencyPairTrendSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CurrencyRateHistory
+        fields = ['rate', 'updated_at']
+
+class MinMaxRateSerializer(serializers.Serializer):
     pair = serializers.CharField()
+    min_rate = serializers.FloatField()
+    max_rate = serializers.FloatField()
+
+class LatestCurrencyRateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CurrencyRate
+        fields = ['id', 'pair', 'rate', 'last_updated']
+
+class CurrencyRateStatusSerializer(serializers.Serializer):
+    pair = serializers.CharField()
+    active = serializers.BooleanField()
+    last_updated = serializers.DateTimeField()
+
+class DailySummarySerializer(serializers.Serializer):
+    pair = serializers.CharField()
+    initial_rate = serializers.FloatField()
+    current_rate = serializers.FloatField()
+    percentage_change = serializers.FloatField()
+
+class CurrencyPairDetailsSerializer(serializers.Serializer):
+    pair = serializers.CharField()
+    current_rate = serializers.FloatField()
+    daily_fluctuation = serializers.FloatField()
+    highest_rate = serializers.FloatField()
+    lowest_rate = serializers.FloatField()
