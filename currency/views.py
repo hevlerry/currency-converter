@@ -16,7 +16,8 @@ from .services import (
     get_all_currency_rate_history, get_min_max_currency_rate_service, get_latest_currency_rates_service,
     check_currency_rate_status_service, get_daily_summary_service, get_currency_pair_details_service,
     create_currency_alert_service, list_currency_alerts_service, get_currency_alert_service,
-    update_currency_alert_service, delete_currency_alert_service, check_and_trigger_alerts
+    update_currency_alert_service, delete_currency_alert_service, check_and_trigger_alerts, convert_currency,
+    bulk_convert_currency, get_conversion_history
 )
 from .serializers import (
     UserSerializer,
@@ -27,6 +28,8 @@ from .serializers import (
     CurrencyPairTrendSerializer,
     CurrencyRateHistorySerializer, MinMaxRateSerializer, LatestCurrencyRateSerializer, CurrencyRateStatusSerializer,
     DailySummarySerializer, CurrencyPairDetailsSerializer, CurrencyAlertCreateSerializer, CurrencyAlertSerializer,
+    CurrencyConvertRequestSerializer, CurrencyConversionSerializer, BulkCurrencyConvertRequestSerializer,
+    CurrencyConvertByIDRequestSerializer,
 )
 from django.shortcuts import get_object_or_404
 import requests
@@ -73,15 +76,23 @@ class CurrencyRateViewSet(viewsets.ModelViewSet):
     serializer_class = CurrencyRateSerializer
     permission_classes = [IsAuthenticated]
 
-    def create(self, request):
-        serializer = self.get_serializer(data=request.data)
-        if serializer.is_valid():
-            # Check if the currency pair already exists
-            if currency_pair_exists(serializer.validated_data['pair']):
-                return Response({'error': 'Currency pair already exists.'}, status=status.HTTP_400_BAD_REQUEST)
-            currency_rate = create_currency_rate(serializer.validated_data)
-            return Response(CurrencyRateSerializer(currency_rate).data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    def is_valid_currency_pair(pair: str) -> bool:
+        # Split the pair into from_currency and to_currency
+        from_currency, to_currency = pair.split('/')
+
+        # Check if both currencies are valid (you can define a list of valid currencies)
+        valid_currencies = [
+            'USD', 'EUR', 'GBP', 'JPY', 'AUD', 'CAD', 'CHF', 'CNY', 'HKD', 'NZD',
+            'SEK', 'KRW', 'SGD', 'NOK', 'MXN', 'INR', 'RUB', 'ZAR', 'TRY', 'BRL',
+            'TWD', 'DKK', 'PLN', 'THB', 'IDR', 'HUF', 'CZK', 'ILS', 'CLP', 'PHP',
+            'AED', 'COP', 'SAR', 'MYR', 'RON'
+        ]
+
+        if from_currency not in valid_currencies or to_currency not in valid_currencies:
+            return False
+
+        # Check if the pair exists in the CurrencyRate model
+        return CurrencyRate.objects.filter(pair=pair).exists()
 
     def update(self, request, pk=None):
         raise MethodNotAllowed("PUT method is not allowed on this endpoint.")
@@ -114,6 +125,17 @@ class CurrencyRateViewSet(viewsets.ModelViewSet):
         elif request.method == 'DELETE':
             currency_rate.delete()
             return Response({'message': 'Currency rate deleted successfully'}, status=status.HTTP_204_NO_CONTENT)
+
+
+def is_valid_currency_pair(pair: str) -> bool:
+    from_currency, to_currency = pair.split('/')
+
+    valid_currencies = ['USD', 'EUR', 'GBP', 'JPY', 'AUD', 'CAD', 'CHF', 'CNY']  # Add all valid currencies here
+
+    if from_currency not in valid_currencies or to_currency not in valid_currencies:
+        return False
+
+    return CurrencyRate.objects.filter(pair=pair).exists()
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -342,3 +364,76 @@ def trigger_currency_alerts(request):
         return Response({'message': 'Alerts checked and triggered if necessary.'}, status=status.HTTP_200_OK)
     except Exception as e:
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def convert_currency_view(request):
+    serializer = CurrencyConvertRequestSerializer(data=request.data)
+
+    if serializer.is_valid():
+        amount = serializer.validated_data['amount']
+        from_currency = serializer.validated_data['from_currency']
+        to_currency = serializer.validated_data['to_currency']
+
+        # Perform the conversion
+        conversion_record = convert_currency(amount, from_currency, to_currency, request.user)
+        if conversion_record:
+            return Response(CurrencyConversionSerializer(conversion_record).data, status=status.HTTP_200_OK)
+        return Response({'error': 'Currency pair not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def convert_currency_by_id_view(request, currency_id):
+    serializer = CurrencyConvertByIDRequestSerializer(data=request.data)
+
+    if serializer.is_valid():
+        amount = serializer.validated_data['amount']
+
+        # Get the currency pair by ID
+        currency_pair = CurrencyRate.objects.filter(id=currency_id).first()
+        if not currency_pair:
+            return Response({'error': 'Currency pair not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        # Split the pair to get from_currency and to_currency
+        from_currency, to_currency = currency_pair.pair.split('/')
+
+        # Perform the conversion
+        conversion_record = convert_currency(amount, from_currency, to_currency, request.user)
+        if conversion_record:
+            return Response(CurrencyConversionSerializer(conversion_record).data, status=status.HTTP_200_OK)
+        return Response({'error': 'Conversion failed.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def bulk_convert_currency_view(request):
+    print("Incoming request data:", request.data)  # Debugging line
+    serializer = BulkCurrencyConvertRequestSerializer(data=request.data)
+
+    if serializer.is_valid():
+        conversions = serializer.validated_data['conversions']
+
+        # Call the bulk conversion service
+        try:
+            results = bulk_convert_currency(conversions, request.user)
+            return Response([CurrencyConversionSerializer(record).data for record in results],
+                            status=status.HTTP_200_OK)
+        except ValueError as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Log serializer errors for debugging
+    print("Serializer errors:", serializer.errors)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_conversion_history_view(request):
+    conversions = get_conversion_history(request.user)
+    serializer = CurrencyConversionSerializer(conversions, many=True)
+    return Response(serializer.data, status=status.HTTP_200_OK)

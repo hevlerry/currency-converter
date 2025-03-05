@@ -1,4 +1,4 @@
-from .models import CurrencyRate, CurrencyRateHistory, CurrencyAlert
+from .models import CurrencyRate, CurrencyRateHistory, CurrencyAlert, CurrencyConversion
 from rest_framework import serializers
 from django.contrib.auth.models import User
 
@@ -91,3 +91,28 @@ class CurrencyAlertCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = CurrencyAlert
         fields = ['pair', 'target_rate']
+
+
+class CurrencyConversionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CurrencyConversion
+        fields = ['id', 'user', 'from_currency', 'to_currency', 'amount', 'converted_amount', 'conversion_rate', 'timestamp']
+        read_only_fields = ['id', 'user', 'converted_amount', 'conversion_rate', 'timestamp']
+
+class CurrencyConvertRequestSerializer(serializers.Serializer):
+    amount = serializers.FloatField()
+    from_currency = serializers.CharField(max_length=10)
+    to_currency = serializers.CharField(max_length=10)
+
+class CurrencyConvertByIDRequestSerializer(serializers.Serializer):
+    amount = serializers.FloatField()
+
+
+class BulkConversionSerializer(serializers.Serializer):
+    from_currency = serializers.CharField(max_length=10)
+    to_currency = serializers.CharField(max_length=10)
+    amount = serializers.FloatField()
+
+
+class BulkCurrencyConvertRequestSerializer(serializers.Serializer):
+    conversions = serializers.ListField(child=BulkConversionSerializer())

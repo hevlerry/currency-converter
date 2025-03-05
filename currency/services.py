@@ -1,7 +1,7 @@
 from django.contrib.auth.models import User
 from django.contrib.auth import authenticate
 from rest_framework_simplejwt.tokens import RefreshToken
-from .models import CurrencyRate, CurrencyRateHistory, CurrencyAlert
+from .models import CurrencyRate, CurrencyRateHistory, CurrencyAlert, CurrencyConversion
 import requests
 from django.conf import settings
 from django.db.models import Min, Max
@@ -247,3 +247,51 @@ def check_and_trigger_alerts():
             alert.triggered = True
             alert.triggered_at = timezone.now()  # Set the time when the alert was triggered
             alert.save()
+
+def convert_currency(amount: float, from_currency: str, to_currency: str, user: User):
+    # Get the conversion rate
+    rate = CurrencyRate.objects.filter(pair=f"{from_currency}/{to_currency}").first()
+    if rate:
+        converted_amount = amount * rate.rate
+        conversion = CurrencyConversion.objects.create(
+            user=user,
+            from_currency=from_currency,
+            to_currency=to_currency,
+            amount=amount,
+            converted_amount=converted_amount,
+            conversion_rate=rate.rate
+        )
+        return conversion
+    return None
+
+def convert_currency_pair(amount: float, currency_pair: str, user: User):
+    from_currency, to_currency = currency_pair.split('/')
+    return convert_currency(amount, from_currency, to_currency, user)
+
+
+def bulk_convert_currency(conversions: list, user: User):
+    results = []
+    errors = []
+
+    for conversion in conversions:
+        from_currency = conversion.get('from_currency')
+        to_currency = conversion.get('to_currency')
+        amount = conversion.get('amount')
+
+        if amount <= 0:
+            errors.append({'error': f'Amount must be greater than zero for {from_currency} to {to_currency}.'})
+            continue
+
+        conversion_record = convert_currency(amount, from_currency, to_currency, user)
+        if conversion_record:
+            results.append(conversion_record)
+        else:
+            errors.append({'error': f'Currency pair {from_currency}/{to_currency} not found.'})
+
+    if errors:
+        raise ValueError("Errors occurred during bulk conversion: " + str(errors))
+
+    return results
+
+def get_conversion_history(user: User):
+    return CurrencyConversion.objects.filter(user=user).order_by('-timestamp')

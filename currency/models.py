@@ -27,3 +27,15 @@ class CurrencyAlert(models.Model):
 
     def __str__(self):
         return f"Alert for {self.pair} at {self.target_rate}"
+
+class CurrencyConversion(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    from_currency = models.CharField(max_length=10)
+    to_currency = models.CharField(max_length=10)
+    amount = models.FloatField()
+    converted_amount = models.FloatField()
+    conversion_rate = models.FloatField()
+    timestamp = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.amount} {self.from_currency} to {self.to_currency} = {self.converted_amount}"

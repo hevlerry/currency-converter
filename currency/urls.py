@@ -16,7 +16,8 @@ from .views import (
     check_currency_rate_status,
     get_daily_summary,  # New endpoint
     get_currency_pair_details, manage_currency_alert,
-    trigger_currency_alerts, list_currency_alerts_and_create  # New endpoint
+    trigger_currency_alerts, list_currency_alerts_and_create, convert_currency_view,
+    bulk_convert_currency_view, get_conversion_history_view, convert_currency_by_id_view  # New endpoint
 )
 
 # Create a router and register the CurrencyRateViewSet
@@ -38,9 +39,12 @@ urlpatterns = [
     path('v1/currency/rates/daily-summary/', get_daily_summary, name='daily_summary'),
     path('v1/currency/rates/<int:currency_rate_id>/details/', get_currency_pair_details, name='currency_pair_details'),
     path('v1/currency/alerts/', list_currency_alerts_and_create, name='list_currency_alerts_and_create'),
-    path('v1/currency/alerts/<int:alert_id>/', manage_currency_alert, name='manage_currency_alert'),  # GET, PUT, DELETE
+    path('v1/currency/alerts/<int:alert_id>/', manage_currency_alert, name='manage_currency_alert'),
     path('v1/currency/alerts/trigger/', trigger_currency_alerts, name='trigger_currency_alerts'),
-    # POST to trigger alerts
+    path('v1/currency/convert/', convert_currency_view, name='convert_currency'), #working
+    path('v1/currency/convert/<int:currency_id>/', convert_currency_by_id_view, name='convert_currency_by_id'), #working
+    path('v1/currency/convert/bulk/', bulk_convert_currency_view, name='bulk_convert_currency'), #not woking
+    path('v1/currency/convert/history/', get_conversion_history_view, name='get_conversion_history'), #working
 ]
 
 # Include the router URLs
