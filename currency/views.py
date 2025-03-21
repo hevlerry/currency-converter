@@ -1,6 +1,5 @@
 from rest_framework import generics, viewsets
-from rest_framework.decorators import action, api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.decorators import action
 from rest_framework.exceptions import MethodNotAllowed
 from .services import (
     register_user,
@@ -71,16 +70,22 @@ class LoginView(generics.GenericAPIView):
             return Response(tokens, status=status.HTTP_200_OK)
         return Response({'error': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
 
+from rest_framework import viewsets, status
+from rest_framework.response import Response
+from rest_framework.exceptions import MethodNotAllowed
+from django.shortcuts import get_object_or_404
+from .models import CurrencyRate, CurrencyRateHistory
+from .serializers import CurrencyRateSerializer
+from rest_framework.permissions import IsAuthenticated
+
 class CurrencyRateViewSet(viewsets.ModelViewSet):
     queryset = CurrencyRate.objects.all()
     serializer_class = CurrencyRateSerializer
     permission_classes = [IsAuthenticated]
 
-    def is_valid_currency_pair(pair: str) -> bool:
-        # Split the pair into from_currency and to_currency
+    def is_valid_currency_pair(self, pair: str) -> bool:
         from_currency, to_currency = pair.split('/')
 
-        # Check if both currencies are valid (you can define a list of valid currencies)
         valid_currencies = [
             'USD', 'EUR', 'GBP', 'JPY', 'AUD', 'CAD', 'CHF', 'CNY', 'HKD', 'NZD',
             'SEK', 'KRW', 'SGD', 'NOK', 'MXN', 'INR', 'RUB', 'ZAR', 'TRY', 'BRL',
@@ -88,17 +93,36 @@ class CurrencyRateViewSet(viewsets.ModelViewSet):
             'AED', 'COP', 'SAR', 'MYR', 'RON'
         ]
 
+        if from_currency == to_currency:
+            return False
+
         if from_currency not in valid_currencies or to_currency not in valid_currencies:
             return False
 
-        # Check if the pair exists in the CurrencyRate model
-        return CurrencyRate.objects.filter(pair=pair).exists()
+        return True
+
+    def create(self, request):
+        serializer = self.get_serializer(data=request.data)
+        if serializer.is_valid():
+            pair = serializer.validated_data['pair']
+
+            if not self.is_valid_currency_pair(pair):
+                return Response({'error': 'Invalid currency pair. The currencies must be different and valid.'}, status=status.HTTP_400_BAD_REQUEST)
+
+            if CurrencyRate.objects.filter(pair=pair).exists():
+                return Response({'error': 'Currency pair already exists.'}, status=status.HTTP_400_BAD_REQUEST)
+
+            currency_rate = CurrencyRate.objects.create(**serializer.validated_data)
+            return Response(CurrencyRateSerializer(currency_rate).data, status=status.HTTP_201_CREATED)
+
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     def update(self, request, pk=None):
         raise MethodNotAllowed("PUT method is not allowed on this endpoint.")
 
     def destroy(self, request, pk=None):
         raise MethodNotAllowed("DELETE method is not allowed on this endpoint.")
+
     @action(detail=True, methods=['put', 'delete'], url_path='manual')
     def manual_update(self, request, pk=None):
         currency_rate = get_object_or_404(self.queryset, pk=pk)
@@ -106,11 +130,9 @@ class CurrencyRateViewSet(viewsets.ModelViewSet):
         if request.method == 'PUT':
             new_rate = request.data.get('rate')
             if new_rate is not None:
-                # Update the currency rate
                 currency_rate.rate = new_rate
                 currency_rate.save()
 
-                # Create a historical record for the manual update
                 CurrencyRateHistory.objects.create(
                     currency_rate=currency_rate,
                     rate=new_rate
@@ -126,23 +148,16 @@ class CurrencyRateViewSet(viewsets.ModelViewSet):
             currency_rate.delete()
             return Response({'message': 'Currency rate deleted successfully'}, status=status.HTTP_204_NO_CONTENT)
 
-
-def is_valid_currency_pair(pair: str) -> bool:
-    from_currency, to_currency = pair.split('/')
-
-    valid_currencies = ['USD', 'EUR', 'GBP', 'JPY', 'AUD', 'CAD', 'CHF', 'CNY']  # Add all valid currencies here
-
-    if from_currency not in valid_currencies or to_currency not in valid_currencies:
-        return False
-
-    return CurrencyRate.objects.filter(pair=pair).exists()
-
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def check_currency_pair(request):
     pair = request.data.get('pair')
     if not pair:
         return Response({'error': 'Currency pair not provided.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    from_currency, to_currency = pair.split('/')
+    if from_currency == to_currency:
+        return Response({'error': 'Invalid currency pair. The currencies must be different.'}, status=status.HTTP_400_BAD_REQUEST)
 
     currency_rate = get_currency_rate_by_pair(pair)
     response_data = {
@@ -166,15 +181,12 @@ def sync_currency_rate(request, id):
     currency_rate = get_object_or_404(CurrencyRate, id=id)
 
     try:
-        # Call the service to get the latest exchange rate
         exchange_rate = sync_currency_rate_service(currency_rate)
 
         if exchange_rate is not None:
-            # Update the currency rate
             currency_rate.rate = exchange_rate
             currency_rate.save()
 
-            # Create a historical record
             CurrencyRateHistory.objects.create(
                 currency_rate=currency_rate,
                 rate=exchange_rate
@@ -198,14 +210,54 @@ class BulkCurrencyRateView(APIView):
     def post(self, request):
         serializer = BulkCurrencyRateSerializer(data=request.data)
         if serializer.is_valid():
-            created_rates = create_bulk_currency_rates(serializer.validated_data['rates'])
-            return Response({
+            rates = serializer.validated_data['rates']
+            created_rates = []
+            errors = []
+
+            seen_pairs = set()
+
+            for rate in rates:
+                pair = rate['pair']
+                if pair in seen_pairs:
+                    errors.append({'error': f'Duplicate currency pair: {pair}'})
+                    continue
+                seen_pairs.add(pair)
+
+                from_currency, to_currency = pair.split('/')
+                if from_currency == to_currency:
+                    errors.append({'error': f'Invalid currency pair: {pair}. The currencies must be different.'})
+                    continue
+
+                valid_currencies = [
+                    'USD', 'EUR', 'GBP', 'JPY', 'AUD', 'CAD', 'CHF', 'CNY', 'HKD', 'NZD',
+                    'SEK', 'KRW', 'SGD', 'NOK', 'MXN', 'INR', 'RUB', 'ZAR', 'TRY', 'BRL',
+                    'TWD', 'DKK', 'PLN', 'THB', 'IDR', 'HUF', 'CZK', 'ILS', 'CLP', 'PHP',
+                    'AED', 'COP', 'SAR', 'MYR', 'RON'
+                ]
+                if from_currency not in valid_currencies or to_currency not in valid_currencies:
+                    errors.append({'error': f'Invalid currency pair: {pair}. One or both currencies are not valid.'})
+                    continue
+
+                if CurrencyRate.objects.filter(pair=pair).exists():
+                    errors.append({'error': f'Currency pair already exists: {pair}'})
+                    continue
+
+                created_rate = create_currency_rate(rate)
+                created_rates.append(created_rate)
+
+            response_data = {
                 "status": "success",
+                "message": "Currency rates added successfully.",
                 "data": {
-                    "rates": created_rates
-                },
-                "message": "Currency rates added successfully."
-            }, status=status.HTTP_201_CREATED)
+                    "created_rates": CurrencyRateSerializer(created_rates, many=True).data
+                }
+            }
+
+            if errors:
+                response_data["errors"] = errors
+
+            return Response(response_data, status=status.HTTP_201_CREATED)
+
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     def delete(self, request):
@@ -223,10 +275,8 @@ class BulkCurrencyRateView(APIView):
 
 @api_view(['GET'])
 def supported_currencies(request):
-    # Use the service function to get the supported currency pairs with IDs
     currency_pairs = get_supported_currency_pairs_with_ids()
 
-    # Prepare the response data
     response_data = [{'id': currency['id'], 'pair': currency['pair']} for currency in currency_pairs]
 
     return Response(response_data, status=status.HTTP_200_OK)
@@ -234,31 +284,24 @@ def supported_currencies(request):
 
 @api_view(['GET'])
 def all_currency_rates_history(request):
-    # Use the service function to get all historical currency rates
-    history_records = get_all_currency_rate_history().order_by('-updated_at')  # Sort by updated_at descending
+    history_records = get_all_currency_rate_history().order_by('-updated_at')
 
-    # Serialize the response data
     serializer = CurrencyRateHistorySerializer(history_records, many=True)
 
     return Response(serializer.data, status=status.HTTP_200_OK)
 
 @api_view(['GET'])
 def currency_pair_trend(request, currency_pair_id):
-    # Use the service function to get historical rates for a specific currency pair
-    trend_records = get_currency_pair_trend(currency_pair_id).order_by('-updated_at')  # Sort by updated_at descending
-
-    # Serialize the response data
+    trend_records = get_currency_pair_trend(currency_pair_id).order_by('-updated_at')
     serializer = CurrencyPairTrendSerializer(trend_records, many=True)
 
     return Response(serializer.data, status=status.HTTP_200_OK)
 
 @api_view(['GET'])
 def get_min_max_currency_rate(request, currency_pair_id):
-    # Use the service function to get the min and max rates
     min_max_rates = get_min_max_currency_rate_service(currency_pair_id)
 
     if min_max_rates:
-        # Serialize the response data
         serializer = MinMaxRateSerializer(data=min_max_rates)
         serializer.is_valid(raise_exception=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
@@ -267,20 +310,16 @@ def get_min_max_currency_rate(request, currency_pair_id):
 
 @api_view(['GET'])
 def get_latest_currency_rates(request):
-    # Use the service function to get the latest currency rates
     latest_rates = get_latest_currency_rates_service()
 
-    # Serialize the response data
     serializer = LatestCurrencyRateSerializer(latest_rates, many=True)
     return Response(serializer.data, status=status.HTTP_200_OK)
 
 @api_view(['GET'])
 def check_currency_rate_status(request, currency_rate_id):
-    # Use the service function to check the status of the currency rate by ID
     status_data = check_currency_rate_status_service(currency_rate_id)
 
     if status_data:
-        # Serialize the response data
         serializer = CurrencyRateStatusSerializer(data=status_data)
         serializer.is_valid(raise_exception=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
@@ -292,7 +331,8 @@ def get_daily_summary(request):
     summary_data = get_daily_summary_service()
 
     if summary_data:
-        return Response(summary_data, status=status.HTTP_200_OK)
+        serializer = DailySummarySerializer(summary_data, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
     else:
         return Response({'error': 'No data available for today.'}, status=status.HTTP_404_NOT_FOUND)
 
@@ -301,8 +341,7 @@ def get_currency_pair_details(request, currency_rate_id):
     details_data = get_currency_pair_details_service(currency_rate_id)
 
     if details_data:
-        serializer = CurrencyPairDetailsSerializer(data=details_data)
-        serializer.is_valid(raise_exception=True)
+        serializer = CurrencyPairDetailsSerializer(details_data)
         return Response(serializer.data, status=status.HTTP_200_OK)
     else:
         return Response({'error': 'Currency pair not found.'}, status=status.HTTP_404_NOT_FOUND)
@@ -360,7 +399,7 @@ def manage_currency_alert(request, alert_id):
 @permission_classes([IsAuthenticated])
 def trigger_currency_alerts(request):
     try:
-        check_and_trigger_alerts()  # Call the function to check and trigger alerts
+        check_and_trigger_alerts()
         return Response({'message': 'Alerts checked and triggered if necessary.'}, status=status.HTTP_200_OK)
     except Exception as e:
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -376,7 +415,6 @@ def convert_currency_view(request):
         from_currency = serializer.validated_data['from_currency']
         to_currency = serializer.validated_data['to_currency']
 
-        # Perform the conversion
         conversion_record = convert_currency(amount, from_currency, to_currency, request.user)
         if conversion_record:
             return Response(CurrencyConversionSerializer(conversion_record).data, status=status.HTTP_200_OK)
@@ -393,15 +431,12 @@ def convert_currency_by_id_view(request, currency_id):
     if serializer.is_valid():
         amount = serializer.validated_data['amount']
 
-        # Get the currency pair by ID
         currency_pair = CurrencyRate.objects.filter(id=currency_id).first()
         if not currency_pair:
             return Response({'error': 'Currency pair not found.'}, status=status.HTTP_404_NOT_FOUND)
 
-        # Split the pair to get from_currency and to_currency
         from_currency, to_currency = currency_pair.pair.split('/')
 
-        # Perform the conversion
         conversion_record = convert_currency(amount, from_currency, to_currency, request.user)
         if conversion_record:
             return Response(CurrencyConversionSerializer(conversion_record).data, status=status.HTTP_200_OK)
@@ -413,21 +448,23 @@ def convert_currency_by_id_view(request, currency_id):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def bulk_convert_currency_view(request):
-    print("Incoming request data:", request.data)  # Debugging line
+    print("Incoming request data:", request.data)
     serializer = BulkCurrencyConvertRequestSerializer(data=request.data)
 
     if serializer.is_valid():
         conversions = serializer.validated_data['conversions']
+        results = []
+        errors = []
 
-        # Call the bulk conversion service
-        try:
-            results = bulk_convert_currency(conversions, request.user)
-            return Response([CurrencyConversionSerializer(record).data for record in results],
-                            status=status.HTTP_200_OK)
-        except ValueError as e:
-            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        results, errors = bulk_convert_currency(conversions, request.user)
 
-    # Log serializer errors for debugging
+        response_data = {
+            'results': [CurrencyConversionSerializer(record).data for record in results],
+            'errors': errors
+        }
+
+        return Response(response_data, status=status.HTTP_200_OK)
+
     print("Serializer errors:", serializer.errors)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 

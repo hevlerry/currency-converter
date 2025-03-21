@@ -7,12 +7,12 @@ class UserSerializer(serializers.ModelSerializer):
         model = User
         fields = ['username', 'password']
         extra_kwargs = {
-            'password': {'write_only': True}  # Ensure password is write-only
+            'password': {'write_only': True}
         }
 
     def create(self, validated_data):
         user = User(**validated_data)
-        user.set_password(validated_data['password'])  # Hash the password
+        user.set_password(validated_data['password'])
         user.save()
         return user
 
@@ -69,18 +69,19 @@ class CurrencyRateStatusSerializer(serializers.Serializer):
     active = serializers.BooleanField()
     last_updated = serializers.DateTimeField()
 
+
 class DailySummarySerializer(serializers.Serializer):
     pair = serializers.CharField()
-    initial_rate = serializers.FloatField()
+    initial_rate = serializers.FloatField(allow_null=True)
     current_rate = serializers.FloatField()
-    percentage_change = serializers.FloatField()
+    percentage_change = serializers.FloatField(allow_null=True)
 
 class CurrencyPairDetailsSerializer(serializers.Serializer):
     pair = serializers.CharField()
     current_rate = serializers.FloatField()
     daily_fluctuation = serializers.FloatField()
-    highest_rate = serializers.FloatField()
-    lowest_rate = serializers.FloatField()
+    highest_rate = serializers.FloatField(allow_null=True)
+    lowest_rate = serializers.FloatField(allow_null=True)
 
 class CurrencyAlertSerializer(serializers.ModelSerializer):
     class Meta:
@@ -113,6 +114,7 @@ class BulkConversionSerializer(serializers.Serializer):
     to_currency = serializers.CharField(max_length=10)
     amount = serializers.FloatField()
 
-
 class BulkCurrencyConvertRequestSerializer(serializers.Serializer):
-    conversions = serializers.ListField(child=BulkConversionSerializer())
+    conversions = serializers.ListField(
+        child=BulkConversionSerializer()
+    )

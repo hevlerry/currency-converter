@@ -5,7 +5,6 @@ from .models import CurrencyRate, CurrencyRateHistory, CurrencyAlert, CurrencyCo
 import requests
 from django.conf import settings
 from django.db.models import Min, Max
-from django.utils import timezone
 from datetime import timedelta
 
 def register_user(username, password):
@@ -32,7 +31,7 @@ def create_bulk_currency_rates(rates_data):
     for data in rates_data:
         currency_rate = create_currency_rate(data)
         currency_rates.append({
-            "id": currency_rate.id,  # Include the ID of the created currency rate
+            "id": currency_rate.id,
             "pair": currency_rate.pair,
             "rate": currency_rate.rate
         })
@@ -40,26 +39,22 @@ def create_bulk_currency_rates(rates_data):
 
 def delete_currency_rates_by_ids(ids):
     deleted_count, _ = CurrencyRate.objects.filter(id__in=ids).delete()
-    return deleted_count, None  # Return the count of deleted records
+    return deleted_count, None
 
 def get_currency_rate_by_id(rate_id):
     return CurrencyRate.objects.get(id=rate_id)
 
 def sync_currency_rate(currency_rate):
-    # Example: Assuming the pair is stored in the format 'USD/EUR'
     currency_pair = currency_rate.pair
     base_currency, target_currency = currency_pair.split('/')
-
-    # Fetch the latest exchange rate from an external API
-    api_key = settings.CURRENCY_FREAKS_API_KEY  # Use the API key from settings
+    api_key = settings.CURRENCY_FREAKS_API_KEY
     api_url = f'https://api.currencyfreaks.com/v2.0/rates/latest?apikey={api_key}&from={base_currency}&to={target_currency}'
 
     try:
         response = requests.get(api_url)
-        response.raise_for_status()  # Raise an error for bad responses
+        response.raise_for_status()
         data = response.json()
 
-        # Extract the exchange rate
         exchange_rate = data.get('rates', {}).get(target_currency)
         if exchange_rate is None:
             raise ValueError(f"Exchange rate for {target_currency} not found in response.")
@@ -84,24 +79,20 @@ def get_supported_currency_pairs_with_ids():
     return CurrencyRate.objects.values('id', 'pair').distinct()
 
 def get_all_currency_rate_history():
-    # Retrieve all historical records of currency rates, ordered by updated_at descending
     return CurrencyRateHistory.objects.select_related('currency_rate').order_by('-updated_at')
 
 def get_currency_pair_trend(currency_pair_id):
-    # Retrieve historical rates for a specific currency pair, ordered by updated_at descending
     return CurrencyRateHistory.objects.filter(currency_rate_id=currency_pair_id).order_by('-updated_at')
 
 
 def get_min_max_currency_rate_service(currency_pair_id):
-    # Retrieve historical rates for the specified currency pair
     rates = CurrencyRateHistory.objects.filter(currency_rate_id=currency_pair_id)
 
     if rates.exists():
         min_rate = rates.aggregate(Min('rate'))['rate__min']
         max_rate = rates.aggregate(Max('rate'))['rate__max']
 
-        # Get the currency pair from the CurrencyRate model
-        currency_rate = rates.first().currency_rate  # Get the first related CurrencyRate object
+        currency_rate = rates.first().currency_rate
         currency_pair = currency_rate.pair if currency_rate else None
 
         return {
@@ -112,17 +103,14 @@ def get_min_max_currency_rate_service(currency_pair_id):
     return None
 
 def get_latest_currency_rates_service():
-    # Retrieve the 10 most recently updated currency rates
     return CurrencyRate.objects.order_by('-last_updated')[:10]
 
 def check_currency_rate_status_service(currency_rate_id):
-    # Check if the currency rate exists by ID
     try:
         currency_rate = CurrencyRate.objects.get(id=currency_rate_id)
     except CurrencyRate.DoesNotExist:
         return None
 
-    # Check if the pair has been updated in the last 3 days
     is_active = (timezone.now() - currency_rate.last_updated) <= timedelta(days=3)
 
     return {
@@ -131,38 +119,47 @@ def check_currency_rate_status_service(currency_rate_id):
         'last_updated': currency_rate.last_updated
     }
 
+def calculate_daily_fluctuation(current_rate, initial_rate):
+    if initial_rate != 0:
+        return ((current_rate - initial_rate) / initial_rate) * 100
+    return 0.0
 
 def get_daily_summary_service():
-    # Get today's date
     today = timezone.now().date()
 
-    # Get all currency rates
     currency_rates = CurrencyRate.objects.all()
     daily_summaries = []
 
     for currency_rate in currency_rates:
-        # Get the initial rate for today using updated_at
         initial_rate = CurrencyRateHistory.objects.filter(
             currency_rate=currency_rate,
-            updated_at__date=today
-        ).order_by('updated_at').first()
+            updated_at__date=today,
+            updated_at__hour=0,
+            updated_at__minute=0
+        ).first()
 
-        # Get the current rate
+        if not initial_rate:
+            initial_rate = CurrencyRateHistory.objects.filter(
+                currency_rate=currency_rate,
+                updated_at__date=today
+            ).order_by('updated_at').first()
+
         current_value = currency_rate.rate
 
         if initial_rate:
             initial_value = initial_rate.rate
-            percentage_change = ((current_value - initial_value) / initial_value) * 100
+            percentage_change = calculate_daily_fluctuation(current_value, initial_value)
+        else:
+            percentage_change = None
 
-            daily_summaries.append({
-                'pair': currency_rate.pair,
-                'initial_rate': initial_value,
-                'current_rate': current_value,
-                'percentage_change': percentage_change
-            })
+        daily_summaries.append({
+            'pair': currency_rate.pair,
+            'initial_rate': initial_value if initial_rate else None,
+            'current_rate': current_value,
+            'percentage_change': percentage_change
+        })
 
     return daily_summaries
-
 
 def get_currency_pair_details_service(currency_rate_id):
     try:
@@ -170,10 +167,8 @@ def get_currency_pair_details_service(currency_rate_id):
     except CurrencyRate.DoesNotExist:
         return None
 
-    # Get today's date
     today = timezone.now().date()
 
-    # Get the daily fluctuation using updated_at
     initial_rate = CurrencyRateHistory.objects.filter(
         currency_rate=currency_rate,
         updated_at__date=today
@@ -183,11 +178,10 @@ def get_currency_pair_details_service(currency_rate_id):
 
     if initial_rate:
         initial_value = initial_rate.rate
-        daily_fluctuation = ((current_rate - initial_value) / initial_value) * 100
+        daily_fluctuation = calculate_daily_fluctuation(current_rate, initial_value)
     else:
-        daily_fluctuation = 0.0  # No fluctuation if no initial rate is found
+        daily_fluctuation = 0.0
 
-    # Get the highest and lowest recorded rates
     highest_rate = CurrencyRateHistory.objects.filter(currency_rate=currency_rate).aggregate(Max('rate'))['rate__max']
     lowest_rate = CurrencyRateHistory.objects.filter(currency_rate=currency_rate).aggregate(Min('rate'))['rate__min']
 
@@ -204,7 +198,6 @@ from django.contrib.auth.models import User
 from django.utils import timezone
 
 def create_currency_alert_service(user: User, pair: str, target_rate: float):
-    # Check if the currency pair exists
     if not CurrencyRate.objects.filter(pair=pair).exists():
         raise ValueError("Currency pair does not exist.")
 
@@ -238,18 +231,15 @@ def delete_currency_alert_service(alert_id: int, user: User):
         return False
 
 def check_and_trigger_alerts():
-    # Get all alerts
     alerts = CurrencyAlert.objects.all()
     for alert in alerts:
-        # Get the current rate for the alert's pair
         current_rate = CurrencyRate.objects.filter(pair=alert.pair).first()
         if current_rate and current_rate.rate > alert.target_rate and not alert.triggered:
             alert.triggered = True
-            alert.triggered_at = timezone.now()  # Set the time when the alert was triggered
+            alert.triggered_at = timezone.now()
             alert.save()
 
 def convert_currency(amount: float, from_currency: str, to_currency: str, user: User):
-    # Get the conversion rate
     rate = CurrencyRate.objects.filter(pair=f"{from_currency}/{to_currency}").first()
     if rate:
         converted_amount = amount * rate.rate
@@ -278,20 +268,20 @@ def bulk_convert_currency(conversions: list, user: User):
         to_currency = conversion.get('to_currency')
         amount = conversion.get('amount')
 
-        if amount <= 0:
-            errors.append({'error': f'Amount must be greater than zero for {from_currency} to {to_currency}.'})
+        if amount is None or amount <= 0:
+            errors.append({'conversion': conversion, 'error': f'Amount must be greater than zero for {from_currency} to {to_currency}.'})
             continue
 
-        conversion_record = convert_currency(amount, from_currency, to_currency, user)
-        if conversion_record:
-            results.append(conversion_record)
-        else:
-            errors.append({'error': f'Currency pair {from_currency}/{to_currency} not found.'})
+        try:
+            conversion_record = convert_currency(amount, from_currency, to_currency, user)
+            if conversion_record is None:
+                errors.append({'conversion': conversion, 'error': f'Currency pair {from_currency}/{to_currency} not found.'})
+            else:
+                results.append(conversion_record)
+        except ValueError as e:
+            errors.append({'conversion': conversion, 'error': str(e)})
 
-    if errors:
-        raise ValueError("Errors occurred during bulk conversion: " + str(errors))
-
-    return results
+    return results, errors
 
 def get_conversion_history(user: User):
     return CurrencyConversion.objects.filter(user=user).order_by('-timestamp')

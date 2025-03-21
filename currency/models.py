@@ -2,7 +2,7 @@ from django.db import models
 from django.contrib.auth.models import User
 
 class CurrencyRate(models.Model):
-    pair = models.CharField(max_length=10)  # e.g., 'USD/EUR'
+    pair = models.CharField(max_length=10)
     rate = models.FloatField()
     last_updated = models.DateTimeField(auto_now=True)
 
@@ -22,7 +22,7 @@ class CurrencyAlert(models.Model):
     pair = models.CharField(max_length=10)
     target_rate = models.FloatField()
     triggered = models.BooleanField(default=False)
-    triggered_at = models.DateTimeField(null=True, blank=True)  # New field to store when the alert was triggered
+    triggered_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

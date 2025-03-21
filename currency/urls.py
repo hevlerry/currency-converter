@@ -14,13 +14,12 @@ from .views import (
     get_min_max_currency_rate,
     get_latest_currency_rates,
     check_currency_rate_status,
-    get_daily_summary,  # New endpoint
+    get_daily_summary,
     get_currency_pair_details, manage_currency_alert,
     trigger_currency_alerts, list_currency_alerts_and_create, convert_currency_view,
-    bulk_convert_currency_view, get_conversion_history_view, convert_currency_by_id_view  # New endpoint
+    bulk_convert_currency_view, get_conversion_history_view, convert_currency_by_id_view
 )
 
-# Create a router and register the CurrencyRateViewSet
 router = DefaultRouter()
 router.register(r'v1/currency/rates', CurrencyRateViewSet, basename='currencyrate')
 
@@ -41,11 +40,10 @@ urlpatterns = [
     path('v1/currency/alerts/', list_currency_alerts_and_create, name='list_currency_alerts_and_create'),
     path('v1/currency/alerts/<int:alert_id>/', manage_currency_alert, name='manage_currency_alert'),
     path('v1/currency/alerts/trigger/', trigger_currency_alerts, name='trigger_currency_alerts'),
-    path('v1/currency/convert/', convert_currency_view, name='convert_currency'), #working
-    path('v1/currency/convert/<int:currency_id>/', convert_currency_by_id_view, name='convert_currency_by_id'), #working
-    path('v1/currency/convert/bulk/', bulk_convert_currency_view, name='bulk_convert_currency'), #not woking
-    path('v1/currency/convert/history/', get_conversion_history_view, name='get_conversion_history'), #working
+    path('v1/currency/convert/', convert_currency_view, name='convert_currency'),
+    path('v1/currency/convert/<int:currency_id>/', convert_currency_by_id_view, name='convert_currency_by_id'),
+    path('v1/currency/convert/bulk/', bulk_convert_currency_view, name='bulk_convert_currency'),
+    path('v1/currency/convert/history/', get_conversion_history_view, name='get_conversion_history'),
 ]
 
-# Include the router URLs
 urlpatterns += router.urls
